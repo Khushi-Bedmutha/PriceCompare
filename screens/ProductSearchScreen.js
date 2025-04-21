@@ -8,21 +8,23 @@ import {
   Linking,
   useColorScheme,
   ActivityIndicator,
+  Alert,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { db } from '../services/firebaseConfig'; // Adjust path as necessary
-import { doc, setDoc, deleteDoc } from 'firebase/firestore';
+import { doc, setDoc, deleteDoc, getDoc } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
+
 const fetchProducts = async (query) => {
   try {
     const response = await fetch(
-        `https://real-time-product-search.p.rapidapi.com/search?q=${encodeURIComponent(query)}&country=us&language=en`, // Correct URL
-        {
-          method: 'GET',
-          headers: {
-            'X-RapidAPI-Key': '986e0ce574msh4e5fc3b712bec59p1893ddjsnaffedc384ab2', // Your API key
-            'X-RapidAPI-Host': 'real-time-product-search.p.rapidapi.com', // Correct Host
-          },
+      `https://real-time-product-search.p.rapidapi.com/search?q=${encodeURIComponent(query)}&country=us&language=en`, 
+      {
+        method: 'GET',
+        headers: {
+          'X-RapidAPI-Key': 'YOUR_API_KEY_HERE', // Your API key
+          'X-RapidAPI-Host': 'real-time-product-search.p.rapidapi.com',
+        },
       }
     );
     const json = await response.json();
@@ -42,10 +44,10 @@ export default function ProductSearchScreen({ route }) {
   const [displayedProducts, setDisplayedProducts] = useState([]);
   const [favorites, setFavorites] = useState([]);
   const [cart, setCart] = useState([]);
-  const [sortOrder, setSortOrder] = useState({ key: null, asc: true });
   const [isLoading, setIsLoading] = useState(false);  // New loading state
+  const [ratings, setRatings] = useState({});  // Store ratings for each product
 
-  const userId = getAuth().currentUser?.uid; 
+  const userId = getAuth().currentUser?.uid;
 
   const getData = useCallback(async () => {
     setIsLoading(true);  // Set loading state to true
@@ -53,7 +55,46 @@ export default function ProductSearchScreen({ route }) {
     setProducts(results);
     setDisplayedProducts(results);
     setIsLoading(false);  // Set loading state to false
+    fetchRatings(results);  // Fetch existing ratings for products
+    fetchFavorites(); // Fetch user's favorite products
+    fetchCart(); // Fetch user's cart items
   }, [searchQuery]);
+
+  const fetchRatings = async (products) => {
+    const ratingsData = {};
+    for (const product of products) {
+      const docRef = doc(db, 'ratings', product.product_id); 
+      const docSnap = await getDoc(docRef);
+      if (docSnap.exists()) {
+        ratingsData[product.product_id] = docSnap.data().rating || 0;
+      } else {
+        ratingsData[product.product_id] = 0;  // Default rating if not found
+      }
+    }
+    setRatings(ratingsData);
+  };
+
+  // Fetch favorites
+  const fetchFavorites = async () => {
+    if (userId) {
+      const favRef = doc(db, 'users', userId, 'favorites', 'list');
+      const favSnap = await getDoc(favRef);
+      if (favSnap.exists()) {
+        setFavorites(favSnap.data().favorites || []);
+      }
+    }
+  };
+
+  // Fetch cart
+  const fetchCart = async () => {
+    if (userId) {
+      const cartRef = doc(db, 'users', userId, 'cart', 'list');
+      const cartSnap = await getDoc(cartRef);
+      if (cartSnap.exists()) {
+        setCart(cartSnap.data().cart || []);
+      }
+    }
+  };
 
   useEffect(() => {
     getData();
@@ -87,17 +128,19 @@ export default function ProductSearchScreen({ route }) {
     }
   };
 
-  const sortBy = (key) => {
-    const isAsc = sortOrder.key === key ? !sortOrder.asc : true;
-    setSortOrder({ key, asc: isAsc });
-
-    const sorted = [...products].sort((a, b) => {
-      const aVal = key === 'price' ? a.offer?.price || 0 : a.product_rating || 0;
-      const bVal = key === 'price' ? b.offer?.price || 0 : b.product_rating || 0;
-      return isAsc ? aVal - bVal : bVal - aVal;
-    });
-
-    setDisplayedProducts(sorted);
+  const submitRating = async (productId, rating) => {
+    try {
+      // Save rating to Firestore
+      await setDoc(doc(db, 'ratings', productId), { rating });
+      setRatings(prevRatings => ({
+        ...prevRatings,
+        [productId]: rating,
+      }));
+      Alert.alert('Rating Submitted', 'Your rating has been submitted successfully!');
+    } catch (error) {
+      console.error('Error submitting rating:', error);
+      Alert.alert('Error', 'There was an error submitting your rating.');
+    }
   };
 
   const styles = createStyles(isDark);
@@ -124,12 +167,13 @@ export default function ProductSearchScreen({ route }) {
           renderItem={({ item }) => {
             const isFav = favorites.includes(item.product_id);
             const isInCart = cart.find((c) => c.product_id === item.product_id);
+            const productRating = ratings[item.product_id] || 0;
 
             return (
               <View style={styles.card}>
                 <Text style={styles.title}>{item.product_title}</Text>
                 <Text style={styles.details}>${item.offer?.price || 'N/A'}</Text>
-                <Text style={styles.details}>⭐ {item.product_rating || 'N/A'}</Text>
+                <Text style={styles.details}>⭐ {productRating}</Text>
 
                 <View style={styles.actionRow}>
                   <TouchableOpacity onPress={() => toggleFavorite(item.product_id, item)}>
@@ -156,6 +200,23 @@ export default function ProductSearchScreen({ route }) {
                       {isInCart ? 'In Cart' : 'Add to Cart'}
                     </Text>
                   </TouchableOpacity>
+
+                  {/* Rating submission section */}
+                  <View style={styles.ratingContainer}>
+                    <Text style={styles.details}>Rate this Product:</Text>
+                    {[1, 2, 3, 4, 5].map((star) => (
+                      <TouchableOpacity
+                        key={star}
+                        onPress={() => submitRating(item.product_id, star)}
+                      >
+                        <Icon
+                          name={star <= productRating ? 'star' : 'star-outline'}
+                          size={24}
+                          color="gold"
+                        />
+                      </TouchableOpacity>
+                    ))}
+                  </View>
                 </View>
               </View>
             );
@@ -216,24 +277,28 @@ const createStyles = (isDark) =>
       color: isDark ? '#fff' : '#000',
     },
     details: {
-      fontSize: 14,
-      color: isDark ? '#ccc' : '#666',
-      marginVertical: 4,
+      fontSize: 12,
+      color: isDark ? '#ccc' : '#555',
       textAlign: 'center',
     },
     actionRow: {
       flexDirection: 'row',
-      justifyContent: 'space-around',
+      justifyContent: 'space-between',
       marginTop: 10,
     },
     button: {
-      paddingVertical: 6,
-      paddingHorizontal: 12,
-      backgroundColor: '#ddd',
+      padding: 8,
+      backgroundColor: '#6cc070',
       borderRadius: 5,
+      justifyContent: 'center',
+      alignItems: 'center',
     },
     buttonText: {
-      fontSize: 13,
-      color: '#000',
+      color: '#fff',
+      fontSize: 12,
+    },
+    ratingContainer: {
+      marginTop: 10,
+      alignItems: 'center',
     },
   });

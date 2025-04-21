@@ -1,8 +1,9 @@
-// HomeScreen.js
 import React, { useState, useEffect } from 'react';
 import { View, Text, TextInput, FlatList, StyleSheet, TouchableOpacity, Image, Button, Alert } from 'react-native';
 import { auth } from '../services/firebaseConfig'; // Your firebase configuration file
 import debounce from 'lodash.debounce';
+import { useTheme } from '../utils/ThemeContext'; // Use the dark theme
+import Icon from 'react-native-vector-icons/FontAwesome'; // Import icon library
 
 // API Fetch function
 const fetchProducts = async (query = 'electronics') => {
@@ -32,6 +33,7 @@ export default function HomeScreen({ navigation }) {
   const [searchQuery, setSearchQuery] = useState('electronics');
   const [cart, setCart] = useState([]);
   const [favorites, setFavorites] = useState([]);
+  const { isDarkMode } = useTheme(); // Dark Mode
 
   // Debounced effect for API calls
   useEffect(() => {
@@ -70,17 +72,30 @@ export default function HomeScreen({ navigation }) {
   };
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.header}>Welcome to ShopX</Text>
+    <View style={[styles.container, isDarkMode && styles.darkContainer]}>
+      <Text style={[styles.header, isDarkMode && styles.darkText]}>Welcome to ShopX</Text>
 
       <TextInput
         placeholder="Search products..."
-        style={styles.search}
+        style={[styles.search, isDarkMode && styles.darkSearch]}
         value={searchQuery}
         onChangeText={setSearchQuery}
       />
 
       <Button title="Search Products" onPress={handleSearchButton} />
+
+      {/* Icon buttons for Profile, Cart, and Favorites */}
+      <View style={styles.iconContainer}>
+        <TouchableOpacity onPress={() => navigation.navigate('Profile')}>
+          <Icon name="user" size={30} color={isDarkMode ? '#fff' : '#000'} />
+        </TouchableOpacity>
+        <TouchableOpacity onPress={() => navigation.navigate('Cart')}>
+          <Icon name="shopping-cart" size={30} color={isDarkMode ? '#fff' : '#000'} />
+        </TouchableOpacity>
+        <TouchableOpacity onPress={() => navigation.navigate('Favorites')}>
+          <Icon name="heart" size={30} color={isDarkMode ? '#fff' : '#000'} />
+        </TouchableOpacity>
+      </View>
 
       <FlatList
         data={products}
@@ -88,14 +103,14 @@ export default function HomeScreen({ navigation }) {
         renderItem={({ item }) => {
           console.log('Rendering item:', item); // Log individual item
           return (
-            <View style={styles.card}>
+            <View style={[styles.card, isDarkMode && styles.darkCard]}>
               <Image source={{ uri: item.product_photos?.[0] || 'https://via.placeholder.com/150' }} style={styles.image} />
-              <Text style={styles.title}>{item.product_title}</Text>
-              <Text style={styles.details}>${item.price} - {item.seller_name}</Text>
-              <TouchableOpacity style={styles.button} onPress={() => handleAddToCart(item)}>
+              <Text style={[styles.title, isDarkMode && styles.darkText]}>{item.product_title}</Text>
+              <Text style={[styles.details, isDarkMode && styles.darkText]}>${item.price} - {item.seller_name}</Text>
+              <TouchableOpacity style={[styles.button, isDarkMode && styles.darkButton]} onPress={() => handleAddToCart(item)}>
                 <Text>Add to Cart</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.button} onPress={() => handleAddToFav(item)}>
+              <TouchableOpacity style={[styles.button, isDarkMode && styles.darkButton]} onPress={() => handleAddToFav(item)}>
                 <Text>Add to Fav</Text>
               </TouchableOpacity>
             </View>
@@ -115,10 +130,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     backgroundColor: '#fff',
   },
+  darkContainer: {
+    backgroundColor: '#121212',
+  },
   header: {
     fontSize: 24,
     fontWeight: 'bold',
     marginBottom: 10,
+  },
+  darkText: {
+    color: '#fff',
   },
   search: {
     borderWidth: 1,
@@ -127,41 +148,52 @@ const styles = StyleSheet.create({
     padding: 8,
     marginBottom: 10,
   },
+  darkSearch: {
+    backgroundColor: '#333',
+    color: '#fff',
+  },
   list: {
-    gap: 10,
+    marginTop: 10,
   },
   card: {
     flex: 1,
+    backgroundColor: '#fff',
     margin: 5,
-    backgroundColor: '#f9f9f9',
     padding: 10,
-    borderRadius: 10,
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOpacity: 0.1,
-    shadowRadius: 5,
+    borderRadius: 8,
     elevation: 3,
   },
-  image: {
-    width: 100,
-    height: 100,
-    resizeMode: 'cover',
-    marginBottom: 10,
+  darkCard: {
+    backgroundColor: '#333',
   },
   title: {
-    fontSize: 16,
     fontWeight: 'bold',
-    textAlign: 'center',
+    marginTop: 5,
   },
   details: {
-    fontSize: 14,
-    color: '#666',
-    marginVertical: 4,
+    fontSize: 12,
+    marginTop: 5,
+  },
+  image: {
+    width: '100%',
+    height: 150,
+    borderRadius: 8,
+    marginBottom: 10,
   },
   button: {
-    padding: 8,
-    backgroundColor: '#ddd',
+    backgroundColor: '#007BFF',
+    paddingVertical: 8,
+    marginBottom: 5,
     borderRadius: 5,
-    marginTop: 10,
+    alignItems: 'center',
+  },
+  darkButton: {
+    backgroundColor: '#444',
+  },
+  iconContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    marginVertical: 15,
   },
 });
+

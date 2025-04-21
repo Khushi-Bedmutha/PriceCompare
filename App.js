@@ -7,7 +7,12 @@ import SignUpScreen from './screens/SignUpScreen';
 import LoginScreen from './screens/LoginScreen';
 import ProductSearchScreen from './screens/ProductSearchScreen'; 
 import ProfileScreen from './screens/ProfileScreen';
+import CartScreen from './screens/CartScreen';
+import FavoritesScreen from './screens/FavoritesScreen';
 import { Text, View, ActivityIndicator } from 'react-native';
+
+// Import the ThemeProvider to wrap the app
+import { ThemeProvider } from './utils/ThemeContext'; 
 
 const Stack = createStackNavigator();
 
@@ -36,15 +41,28 @@ export default function App() {
   }
 
   return (
-    <NavigationContainer>
-      <Stack.Navigator initialRouteName={isLoggedIn ? 'Home' : 'SignUp'}>
-        {/* Screens should remain defined in the navigator, don't use conditional inside */}
-        <Stack.Screen name="Home" component={HomeScreen} />
-        <Stack.Screen name="SignUp" component={SignUpScreen} />
-        <Stack.Screen name="Login" component={LoginScreen} />
-        <Stack.Screen name="ProductSearch" component={ProductSearchScreen} />
-        <Stack.Screen name="Profile" component={ProfileScreen} /> 
-      </Stack.Navigator>
-    </NavigationContainer>
+    // Wrap the app with the ThemeProvider to access the theme context
+    <ThemeProvider>
+      <NavigationContainer>
+        <Stack.Navigator
+          initialRouteName={isLoggedIn ? 'Home' : 'SignUp'}
+          screenOptions={{
+            headerStyle: {
+              backgroundColor: 'lightgray', // Default light theme color
+            },
+            headerTintColor: 'black',  // Default text color for light theme
+          }}
+        >
+          <Stack.Screen name="Home" component={HomeScreen} />
+          <Stack.Screen name="SignUp" component={SignUpScreen} />
+          <Stack.Screen name="Login" component={LoginScreen} />
+          <Stack.Screen name="ProductSearch" component={ProductSearchScreen} />
+          <Stack.Screen name="Profile" component={ProfileScreen} />
+          <Stack.Screen name="Cart" component={CartScreen} />
+          <Stack.Screen name="Favorites" component={FavoritesScreen} />
+
+       </Stack.Navigator>
+      </NavigationContainer>
+    </ThemeProvider>
   );
 }

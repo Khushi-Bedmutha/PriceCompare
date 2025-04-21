@@ -1,104 +1,123 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, FlatList, StyleSheet, useColorScheme } from 'react-native';
-import { db, auth } from '../services/firebaseConfig'; // Adjusted path
-import { collection, getDocs } from 'firebase/firestore';
+import React, { useState, useEffect } from 'react';
+import { View, Text, FlatList, StyleSheet, TouchableOpacity, Switch, Alert } from 'react-native';
+import { getData } from '../utils/storage';
+import { auth } from '../services/firebaseConfig';
+import { useTheme } from '../utils/ThemeContext'; // Use the theme context
 
-export default function UserProfileScreen() {
-  const userId = 'demoUser123'; // Replace with actual user UID
-  const [cartItems, setCartItems] = useState([]);
+export default function ProfileScreen({ navigation }) {
   const [favorites, setFavorites] = useState([]);
-
-  const isDark = useColorScheme() === 'dark';
+  const [cart, setCart] = useState([]);
+  const { toggleTheme, isDarkMode } = useTheme(); // Access theme from context
 
   useEffect(() => {
-    const fetchUserData = async () => {
-      const favSnapshot = await getDocs(collection(db, 'users', userId, 'favorites'));
-      const cartSnapshot = await getDocs(collection(db, 'users', userId, 'cart'));
-
-      setFavorites(favSnapshot.docs.map((doc) => doc.data()));
-      setCartItems(cartSnapshot.docs.map((doc) => doc.data()));
+    const loadData = async () => {
+      const favs = await getData('favorites');
+      const cartItems = await getData('cart');
+      setFavorites(favs || []);
+      setCart(cartItems || []);
     };
-
-    fetchUserData();
+    loadData();
   }, []);
 
-  const styles = createStyles(isDark);
-
-  const renderItem = ({ item }) => (
-    <View style={styles.itemBox}>
-      <Text style={styles.itemTitle}>{item.product_title}</Text>
-      <Text style={styles.itemSub}>Price: ${item.offer?.price || 'N/A'}</Text>
-      <Text style={styles.itemSub}>Rating: ⭐ {item.product_rating || 'N/A'}</Text>
-    </View>
-  );
+  const handleLogout = () => {
+    auth.signOut()
+      .then(() => {
+        navigation.replace('Login');
+      })
+      .catch((error) => {
+        Alert.alert('Logout Failed', error.message);
+      });
+  };
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.header}>Your Profile</Text>
+    <View style={[styles.container, isDarkMode && styles.darkContainer]}>
+      <Text style={[styles.header, isDarkMode && styles.darkText]}>
+        Welcome, {auth.currentUser?.email || 'User'}
+      </Text>
 
-      <Text style={styles.subHeader}>Favorites</Text>
-      {favorites.length === 0 ? (
-        <Text style={styles.empty}>No favorites yet.</Text>
-      ) : (
+      <View style={styles.section}>
+        <Text style={[styles.subheader, isDarkMode && styles.darkText]}>Favorites ({favorites.length})</Text>
         <FlatList
           data={favorites}
-          keyExtractor={(item) => item.product_id || item.product_title}
-          renderItem={renderItem}
+          keyExtractor={(item) => item.product_id}
+          renderItem={({ item }) => <Text style={[styles.item, isDarkMode && styles.darkText]}>{item.product_title}</Text>}
         />
-      )}
+      </View>
 
-      <Text style={styles.subHeader}>Cart</Text>
-      {cartItems.length === 0 ? (
-        <Text style={styles.empty}>Your cart is empty.</Text>
-      ) : (
+      <View style={styles.section}>
+        <Text style={[styles.subheader, isDarkMode && styles.darkText]}>Cart ({cart.length})</Text>
         <FlatList
-          data={cartItems}
-          keyExtractor={(item) => item.product_id || item.product_title}
-          renderItem={renderItem}
+          data={cart}
+          keyExtractor={(item) => item.product_id}
+          renderItem={({ item }) => <Text style={[styles.item, isDarkMode && styles.darkText]}>{item.product_title}</Text>}
         />
-      )}
+      </View>
+
+      <View style={styles.section}>
+        <Text style={[styles.subheader, isDarkMode && styles.darkText]}>Theme</Text>
+        <View style={styles.toggleRow}>
+          <Text style={[styles.item, isDarkMode && styles.darkText]}>Dark Mode</Text>
+          <Switch value={isDarkMode} onValueChange={toggleTheme} />
+        </View>
+      </View>
+
+      <View style={styles.section}>
+        <Text style={[styles.subheader, isDarkMode && styles.darkText]}>Terms & Privacy</Text>
+        <Text style={[styles.item, isDarkMode && styles.darkText]}>By using this app you agree to our terms and conditions.</Text>
+        <Text style={[styles.item, isDarkMode && styles.darkText]}>We respect your privacy and do not share your data.</Text>
+      </View>
+
+      <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
+        <Text style={styles.logoutText}>Log Out</Text>
+      </TouchableOpacity>
     </View>
   );
 }
 
-const createStyles = (isDark) =>
-  StyleSheet.create({
-    container: {
-      flex: 1,
-      padding: 20,
-      backgroundColor: isDark ? '#111' : '#fff',
-    },
-    header: {
-      fontSize: 28,
-      fontWeight: 'bold',
-      marginBottom: 10,
-      color: isDark ? '#fff' : '#000',
-    },
-    subHeader: {
-      fontSize: 20,
-      fontWeight: 'bold',
-      marginTop: 20,
-      color: isDark ? '#ddd' : '#222',
-    },
-    empty: {
-      fontSize: 16,
-      fontStyle: 'italic',
-      color: isDark ? '#aaa' : '#555',
-      marginTop: 5,
-    },
-    itemBox: {
-      backgroundColor: isDark ? '#222' : '#f0f0f0',
-      padding: 10,
-      borderRadius: 8,
-      marginVertical: 5,
-    },
-    itemTitle: {
-      fontSize: 16,
-      fontWeight: '600',
-      color: isDark ? '#fff' : '#000',
-    },
-    itemSub: {
-      fontSize: 14,
-      color: isDark ? '#bbb' : '#555',
-    },
-  });
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    padding: 16,
+    backgroundColor: '#fff',
+  },
+  darkContainer: {
+    backgroundColor: '#121212',
+  },
+  header: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    marginBottom: 12,
+  },
+  darkText: {
+    color: '#fff',
+  },
+  section: {
+    marginBottom: 20,
+  },
+  subheader: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 6,
+  },
+  item: {
+    fontSize: 14,
+    paddingVertical: 2,
+    color: '#333',
+  },
+  toggleRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  logoutButton: {
+    marginTop: 20,
+    backgroundColor: '#ff4444',
+    padding: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  logoutText: {
+    color: '#fff',
+    fontWeight: 'bold',
+  },
+});
