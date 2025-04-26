@@ -11,18 +11,16 @@ import {
   Alert,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
-import { db } from '../services/firebaseConfig'; // Adjust path as necessary
-import { doc, setDoc, deleteDoc, getDoc } from 'firebase/firestore';
-import { getAuth } from 'firebase/auth';
+import { getData, storeData } from '../utils/storage';
 
 const fetchProducts = async (query) => {
   try {
     const response = await fetch(
-      `https://real-time-product-search.p.rapidapi.com/search?q=${encodeURIComponent(query)}&country=us&language=en`, 
+      `https://real-time-product-search.p.rapidapi.com/search?q=${encodeURIComponent(query)}&country=us&language=en`,
       {
         method: 'GET',
         headers: {
-          'X-RapidAPI-Key': 'YOUR_API_KEY_HERE', // Your API key
+          'X-RapidAPI-Key': '986e0ce574msh4e5fc3b712bec59p1893ddjsnaffedc384ab2',
           'X-RapidAPI-Host': 'real-time-product-search.p.rapidapi.com',
         },
       }
@@ -35,111 +33,99 @@ const fetchProducts = async (query) => {
   }
 };
 
-export default function ProductSearchScreen({ route }) {
+export default function ProductSearchScreen({ route, navigation }) {
   const { searchQuery } = route.params;
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
 
   const [products, setProducts] = useState([]);
-  const [displayedProducts, setDisplayedProducts] = useState([]);
   const [favorites, setFavorites] = useState([]);
   const [cart, setCart] = useState([]);
-  const [isLoading, setIsLoading] = useState(false);  // New loading state
-  const [ratings, setRatings] = useState({});  // Store ratings for each product
+  const [isLoading, setIsLoading] = useState(false);
+  const [ratings, setRatings] = useState({});
+  const [sortOption, setSortOption] = useState(null);
+  const [sortDirection, setSortDirection] = useState('asc');
 
-  const userId = getAuth().currentUser?.uid;
-
-  const getData = useCallback(async () => {
-    setIsLoading(true);  // Set loading state to true
+  const getDataFromStorage = useCallback(async () => {
+    setIsLoading(true);
     const results = await fetchProducts(searchQuery);
     setProducts(results);
-    setDisplayedProducts(results);
-    setIsLoading(false);  // Set loading state to false
-    fetchRatings(results);  // Fetch existing ratings for products
-    fetchFavorites(); // Fetch user's favorite products
-    fetchCart(); // Fetch user's cart items
+    const favs = await getData('favorites') || [];
+    const cartItems = await getData('cart') || [];
+    const ratingData = await getData('ratings') || {};
+    setFavorites(favs.map(item => item.product_id));
+    setCart(cartItems);
+    setRatings(ratingData);
+    setIsLoading(false);
   }, [searchQuery]);
 
-  const fetchRatings = async (products) => {
-    const ratingsData = {};
-    for (const product of products) {
-      const docRef = doc(db, 'ratings', product.product_id); 
-      const docSnap = await getDoc(docRef);
-      if (docSnap.exists()) {
-        ratingsData[product.product_id] = docSnap.data().rating || 0;
-      } else {
-        ratingsData[product.product_id] = 0;  // Default rating if not found
-      }
-    }
-    setRatings(ratingsData);
-  };
-
-  // Fetch favorites
-  const fetchFavorites = async () => {
-    if (userId) {
-      const favRef = doc(db, 'users', userId, 'favorites', 'list');
-      const favSnap = await getDoc(favRef);
-      if (favSnap.exists()) {
-        setFavorites(favSnap.data().favorites || []);
-      }
-    }
-  };
-
-  // Fetch cart
-  const fetchCart = async () => {
-    if (userId) {
-      const cartRef = doc(db, 'users', userId, 'cart', 'list');
-      const cartSnap = await getDoc(cartRef);
-      if (cartSnap.exists()) {
-        setCart(cartSnap.data().cart || []);
-      }
-    }
-  };
-
   useEffect(() => {
-    getData();
-  }, [getData]);
+    getDataFromStorage();
+  }, [getDataFromStorage]);
 
-  const handleProductClick = (productUrl) => {
-    Linking.openURL(productUrl);
+  const getSortedProducts = () => {
+    let sorted = [...products];
+
+    if (sortOption === 'price') {
+      sorted.sort((a, b) =>
+        sortDirection === 'asc'
+          ? (a.offer?.price || 0) - (b.offer?.price || 0)
+          : (b.offer?.price || 0) - (a.offer?.price || 0)
+      );
+    } else if (sortOption === 'rating') {
+      sorted.sort((a, b) =>
+        sortDirection === 'asc'
+          ? (ratings[a.product_id] || 0) - (ratings[b.product_id] || 0)
+          : (ratings[b.product_id] || 0) - (ratings[a.product_id] || 0)
+      );
+    }
+
+    return sorted;
   };
 
   const toggleFavorite = async (id, item) => {
-    const isFav = favorites.includes(id);
-    let updatedFavorites;
-
+    let favs = await getData('favorites') || [];
+    const isFav = favs.find((p) => p.product_id === id);
     if (isFav) {
-      updatedFavorites = favorites.filter((favId) => favId !== id);
-      await deleteDoc(doc(db, 'users', userId, 'favorites', id));
+      favs = favs.filter((p) => p.product_id !== id);
     } else {
-      updatedFavorites = [...favorites, id];
-      await setDoc(doc(db, 'users', userId, 'favorites', id), item);
+      favs.push(item);
     }
-
-    setFavorites(updatedFavorites);
+    setFavorites(favs.map(p => p.product_id));
+    await storeData('favorites', favs);
   };
 
   const addToCart = async (item) => {
-    const isInCart = cart.find((c) => c.product_id === item.product_id);
-    if (!isInCart) {
-      const updated = [...cart, item];
-      setCart(updated);
-      await setDoc(doc(db, 'users', userId, 'cart', item.product_id), item);
+    try {
+      let cartItems = await getData('cart') || [];
+      const exists = cartItems.find((p) => p.product_id === item.product_id);
+      if (!exists) {
+        const updatedCart = [...cartItems, item];
+        await storeData('cart', updatedCart);
+        setCart(updatedCart);
+        Alert.alert('Added to Cart', `"${item.product_title}" has been added to your cart.`);
+      } else {
+        Alert.alert('Already in Cart', `"${item.product_title}" is already in your cart.`);
+      }
+    } catch (e) {
+      console.error('Error adding to cart:', e);
+      Alert.alert('Error', 'Could not add item to cart. Please try again.');
     }
   };
 
   const submitRating = async (productId, rating) => {
-    try {
-      // Save rating to Firestore
-      await setDoc(doc(db, 'ratings', productId), { rating });
-      setRatings(prevRatings => ({
-        ...prevRatings,
-        [productId]: rating,
-      }));
-      Alert.alert('Rating Submitted', 'Your rating has been submitted successfully!');
-    } catch (error) {
-      console.error('Error submitting rating:', error);
-      Alert.alert('Error', 'There was an error submitting your rating.');
+    const updatedRatings = { ...ratings, [productId]: rating };
+    setRatings(updatedRatings);
+    await storeData('ratings', updatedRatings);
+    Alert.alert('Success', 'Rating submitted successfully.');
+  };
+
+  const toggleSort = (option) => {
+    if (sortOption === option) {
+      setSortDirection(prev => (prev === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortOption(option);
+      setSortDirection('asc');
     }
   };
 
@@ -147,14 +133,28 @@ export default function ProductSearchScreen({ route }) {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.header}>Results for "{searchQuery}"</Text>
+      <View style={styles.topBar}>
+        <Text style={styles.header}>Results for "{searchQuery}"</Text>
+        <View style={styles.iconRow}>
+          <TouchableOpacity onPress={() => navigation.navigate('Favorites')}>
+            <Icon name="heart" size={24} color={isDark ? '#fff' : '#000'} />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => navigation.navigate('Cart')} style={{ marginLeft: 16 }}>
+            <Icon name="cart" size={24} color={isDark ? '#fff' : '#000'} />
+          </TouchableOpacity>
+        </View>
+      </View>
 
-      <View style={styles.sortContainer}>
-        <TouchableOpacity style={styles.sortButton} onPress={() => sortBy('price')}>
-          <Text style={styles.sortText}>Sort by Price</Text>
+      <View style={styles.sortBar}>
+        <TouchableOpacity style={styles.sortButton} onPress={() => toggleSort('price')}>
+          <Text style={styles.sortText}>
+            Price ({sortOption === 'price' ? sortDirection : 'asc'})
+          </Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.sortButton} onPress={() => sortBy('rating')}>
-          <Text style={styles.sortText}>Sort by Rating</Text>
+        <TouchableOpacity style={styles.sortButton} onPress={() => toggleSort('rating')}>
+          <Text style={styles.sortText}>
+            Rating ({sortOption === 'rating' ? sortDirection : 'asc'})
+          </Text>
         </TouchableOpacity>
       </View>
 
@@ -162,11 +162,11 @@ export default function ProductSearchScreen({ route }) {
         <ActivityIndicator size="large" color="#0000ff" />
       ) : (
         <FlatList
-          data={displayedProducts}
-          keyExtractor={(item) => item.product_id || item.product_title}
+          data={getSortedProducts()}
+          keyExtractor={(item) => item.product_id}
           renderItem={({ item }) => {
             const isFav = favorites.includes(item.product_id);
-            const isInCart = cart.find((c) => c.product_id === item.product_id);
+            const isInCart = !!cart.find((c) => c.product_id === item.product_id);
             const productRating = ratings[item.product_id] || 0;
 
             return (
@@ -184,15 +184,15 @@ export default function ProductSearchScreen({ route }) {
                     />
                   </TouchableOpacity>
 
-                  <TouchableOpacity
-                    style={styles.button}
-                    onPress={() => handleProductClick(item.product_page_url)}
-                  >
+                  <TouchableOpacity style={styles.button} onPress={() => Linking.openURL(item.product_page_url)}>
                     <Text style={styles.buttonText}>View</Text>
                   </TouchableOpacity>
 
                   <TouchableOpacity
-                    style={[styles.button, { backgroundColor: isInCart ? '#aaa' : '#6cc070' }]}
+                    style={[
+                      styles.button,
+                      { backgroundColor: isInCart ? '#aaa' : '#6cc070' },
+                    ]}
                     onPress={() => addToCart(item)}
                     disabled={isInCart}
                   >
@@ -200,29 +200,23 @@ export default function ProductSearchScreen({ route }) {
                       {isInCart ? 'In Cart' : 'Add to Cart'}
                     </Text>
                   </TouchableOpacity>
+                </View>
 
-                  {/* Rating submission section */}
-                  <View style={styles.ratingContainer}>
-                    <Text style={styles.details}>Rate this Product:</Text>
-                    {[1, 2, 3, 4, 5].map((star) => (
-                      <TouchableOpacity
-                        key={star}
-                        onPress={() => submitRating(item.product_id, star)}
-                      >
-                        <Icon
-                          name={star <= productRating ? 'star' : 'star-outline'}
-                          size={24}
-                          color="gold"
-                        />
-                      </TouchableOpacity>
-                    ))}
-                  </View>
+                <View style={styles.ratingContainer}>
+                  <Text style={styles.details}>Rate this Product:</Text>
+                  {[1, 2, 3, 4, 5].map((star) => (
+                    <TouchableOpacity key={star} onPress={() => submitRating(item.product_id, star)}>
+                      <Icon
+                        name={star <= productRating ? 'star' : 'star-outline'}
+                        size={24}
+                        color="gold"
+                      />
+                    </TouchableOpacity>
+                  ))}
                 </View>
               </View>
             );
           }}
-          numColumns={1}
-          contentContainerStyle={styles.list}
         />
       )}
     </View>
@@ -242,7 +236,49 @@ const createStyles = (isDark) =>
       marginBottom: 10,
       color: isDark ? '#fff' : '#000',
     },
-    sortContainer: {
+    card: {
+      marginBottom: 15,
+      padding: 15,
+      borderRadius: 10,
+      backgroundColor: isDark ? '#333' : '#f9f9f9',
+    },
+    title: {
+      fontSize: 18,
+      fontWeight: 'bold',
+      color: isDark ? '#fff' : '#000',
+    },
+    details: {
+      fontSize: 14,
+      color: isDark ? '#ccc' : '#555',
+    },
+    actionRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-around',
+      marginTop: 10,
+    },
+    button: {
+      padding: 8,
+      borderRadius: 5,
+      backgroundColor: '#6cc070',
+    },
+    buttonText: {
+      color: '#fff',
+    },
+    ratingContainer: {
+      flexDirection: 'row',
+      justifyContent: 'center',
+      marginTop: 10,
+    },
+    topBar: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: 10,
+    },
+    iconRow: {
+      flexDirection: 'row',
+    },
+    sortBar: {
       flexDirection: 'row',
       justifyContent: 'space-around',
       marginBottom: 10,
@@ -253,52 +289,6 @@ const createStyles = (isDark) =>
       borderRadius: 5,
     },
     sortText: {
-      fontSize: 14,
-      color: '#000',
-    },
-    list: {
-      gap: 10,
-    },
-    card: {
-      flex: 1,
-      margin: 5,
-      backgroundColor: isDark ? '#222' : '#f9f9f9',
-      padding: 10,
-      borderRadius: 10,
-      shadowColor: '#000',
-      shadowOpacity: 0.1,
-      shadowRadius: 5,
-      elevation: 3,
-    },
-    title: {
-      fontSize: 16,
       fontWeight: 'bold',
-      textAlign: 'center',
-      color: isDark ? '#fff' : '#000',
-    },
-    details: {
-      fontSize: 12,
-      color: isDark ? '#ccc' : '#555',
-      textAlign: 'center',
-    },
-    actionRow: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      marginTop: 10,
-    },
-    button: {
-      padding: 8,
-      backgroundColor: '#6cc070',
-      borderRadius: 5,
-      justifyContent: 'center',
-      alignItems: 'center',
-    },
-    buttonText: {
-      color: '#fff',
-      fontSize: 12,
-    },
-    ratingContainer: {
-      marginTop: 10,
-      alignItems: 'center',
     },
   });
