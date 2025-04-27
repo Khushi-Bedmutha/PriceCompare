@@ -164,6 +164,7 @@ export default function ProductSearchScreen({ route, navigation }) {
         <FlatList
           data={getSortedProducts()}
           keyExtractor={(item) => item.product_id}
+          extraData={{ sortOption, sortDirection, ratings }}
           renderItem={({ item }) => {
             const isFav = favorites.includes(item.product_id);
             const isInCart = !!cart.find((c) => c.product_id === item.product_id);
